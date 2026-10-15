@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Etapa 1 — Competencias
+// ---------------------------------------------------------------------------
+
+enum TipoCompetencia {
+  FORMAS
+  COMBATE
+  ARMAS
+  OTRO
+}
+
+enum EstadoCompetencia {
+  BORRADOR
+  ABIERTA
+  CERRADA
+  FINALIZADA
+}
+
+model Competencia {
+  id               String            @id @default(uuid())
+  nombre           String
+  tipo             TipoCompetencia
+  descripcion      String?
+  // Lista de datos extra que se le piden al participante al inscribirse.
+  // Cada elemento: { clave, etiqueta, tipo, obligatorio, opciones? }
+  camposRequeridos Json              @default("[]")
+  estado           EstadoCompetencia @default(BORRADOR)
+  creadoEn         DateTime          @default(now())
+  actualizadoEn    DateTime          @updatedAt
+
+  inscripciones Inscripcion[]
+  brackets      Bracket[]
+
+  @@map("competencias")
+}
+
+// ---------------------------------------------------------------------------
+// Etapa 2 — Participantes e inscripciones
+// ---------------------------------------------------------------------------
+
+enum Genero {
+  MASCULINO
+  FEMENINO
+  OTRO
+}
+
+model Participante {
+  id              String    @id @default(uuid())
+  nombre          String
+  apellido        String
+  documento       String    @unique
+  fechaNacimiento DateTime?
+  genero          Genero?
+  clubEscuela     String?
+  contacto        String?
+  creadoEn        DateTime  @default(now())
+  actualizadoEn   DateTime  @updatedAt
+
+  inscripciones Inscripcion[]
+
+  @@map("participantes")
+}
+
+enum EstadoInscripcion {
+  PENDIENTE
+  CONFIRMADA
+}
+
+model Inscripcion {
+  id             String            @id @default(uuid())
+  participanteId String
+  competenciaId  String
+  categoria      String?
+  // Respuestas a los camposRequeridos de la competencia: { clave: valor }
+  respuestas     Json              @default("{}")
+  estado         EstadoInscripcion @default(CONFIRMADA)
+  creadoEn       DateTime          @default(now())
+  actualizadoEn  DateTime          @updatedAt
+
+  participante Participante @relation(fields: [participanteId], references: [id], onDelete: Cascade)
+  competencia  Competencia  @relation(fields: [competenciaId], references: [id], onDelete: Cascade)
+
+  combatesComoA   Combate[] @relation("competidorA")
+  combatesComoB   Combate[] @relation("competidorB")
+  combatesGanados Combate[] @relation("ganador")
+
+  // Un participante no puede inscribirse dos veces en la misma competencia
+  @@unique([participanteId, competenciaId])
+  @@map("inscripciones")
+}
+
+// ---------------------------------------------------------------------------
+// Etapa 3 — Brackets y combates
+// ---------------------------------------------------------------------------
+
+enum TipoBracket {
+  ELIMINACION_SIMPLE
+}
+
+enum EstadoBracket {
+  ARMADO
+  EN_CURSO
+  FINALIZADO
+}
+
+model Bracket {
+  id            String        @id @default(uuid())
+  competenciaId String
+  nombre        String
+  tipo          TipoBracket   @default(ELIMINACION_SIMPLE)
+  estado        EstadoBracket @default(ARMADO)
+  creadoEn      DateTime      @default(now())
+  actualizadoEn DateTime      @updatedAt
+
+  competencia Competencia @relation(fields: [competenciaId], references: [id], onDelete: Cascade)
+  combates    Combate[]
+
+  @@map("brackets")
+}
+
+enum EstadoCombate {
+  PENDIENTE
+  EN_CURSO
+  FINALIZADO
+}
+
+model Combate {
+  id       String @id @default(uuid())
+  bracketId String
+  ronda    Int
+  posicion Int
+
+  competidorAId String?
+  competidorBId String?
+
+  // Hacia dónde avanza el ganador. ranuraSiguiente: 0 = competidor A, 1 = B.
+  combateSiguienteId String?
+  ranuraSiguiente    Int?
+
+  ganadorId String?
+  // { rondas: [{a, b}], metodo, observaciones }
+  resultado Json?
+  estado    EstadoCombate @default(PENDIENTE)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  bracket     Bracket      @relation(fields: [bracketId], references: [id], onDelete: Cascade)
+  competidorA Inscripcion? @relation("competidorA", fields: [competidorAId], references: [id], onDelete: SetNull)
+  competidorB Inscripcion? @relation("competidorB", fields: [competidorBId], references: [id], onDelete: SetNull)
+  ganador     Inscripcion? @relation("ganador", fields: [ganadorId], references: [id], onDelete: SetNull)
+
+  combateSiguiente Combate?  @relation("avance", fields: [combateSiguienteId], references: [id], onDelete: SetNull)
+  combatesPrevios  Combate[] @relation("avance")
+
+  @@unique([bracketId, ronda, posicion])
+  @@map("combates")
+}

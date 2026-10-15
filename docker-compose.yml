@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: torneo
+      POSTGRES_PASSWORD: torneo
+      POSTGRES_DB: torneo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U torneo -d torneo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://torneo:torneo@db:5432/torneo
+      WATCHPACK_POLLING: "true"   # recarga en caliente al editar archivos desde Windows/Mac
+    volumes:
+      - .:/app
+      - /app/node_modules          # usa los node_modules del contenedor, no los del host
+      - /app/.next
+    # Al iniciar: genera el cliente de Prisma, aplica migraciones pendientes y levanta la app.
+    # Si aún no existen migraciones, avisa y sigue (la primera se crea con `prisma migrate dev`).
+    command: ["sh", "-c", "npx prisma generate && (npx prisma migrate deploy || echo 'Aviso - no se aplicaron migraciones') && npm run dev"]
+
+volumes:
+  pgdata:
